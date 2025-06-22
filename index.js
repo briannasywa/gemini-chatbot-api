@@ -1,175 +1,48 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import multer from 'multer';
+// index.js
 
-import fs from 'fs';
-import path from 'path';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import path from "path";
+import { fileURLToPath } from "url";
 
-import { createPartFromUri, createUserContent, GoogleGenAI } from '@google/genai';
+// Helper untuk mendapatkan __dirname di ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// setup aplikasinya di sini
-dotenv.config(); // load file .env
+// Muat variabel lingkungan dari file .env
+dotenv.config();
 
-// inisialisasi Express.js
 const app = express();
+const port = 3000;
 
-// tambah 1 middleware --> .use()
-app.use(
-  // tambahkan Express JSON middleware
-  // Content-Type: application/json
-  express.json()
-);
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// inisialisasi model
-// gemini-2.0-flash
-const genAI = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_GEMINI_API_KEY
-});
-// const result = await genAI.models.generateContent({ model: 'gemini-2.0-flash', contents: "Hi." });
+// *** BARIS BARU: Sajikan file statis dari folder 'public' ***
+app.use(express.static(path.join(__dirname, "public")));
 
-// console.log(result.text);
+// Inisialisasi Google Generative AI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const upload = multer({
-  dest: 'uploads/'
-});
-
-// route endpoints
-
-app.post('/generate-text', async (req, res) => {
-  const { prompt } = req.body;
-
+// Definisikan endpoint untuk chatbot
+app.post("/chat", async (req, res) => {
   try {
-    const result = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: prompt
-    });
-
-    console.log(result.text);
-
-    res.json({
-      output: result.text
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({
-      error: e.message
-    });
-  }
-});
-
-// upload.single(formDataYangDicari: string)
-// contoh: upload.single('file') --> yang dicari di FormData yang bernama 'file'
-app.post('/generate-from-image', upload.single('image'), async (req, res) => {
-  const { prompt = "Describe this uploaded image." } = req.body;
-
-  try {
-    // 1. Baca file gambar
-    const image = await genAI.files.upload({
-      file: req.file.path,
-      config: {
-        mimeType: req.file.mimetype
-      }
-    });
-
-    // 3. Sertakan dalam prompt
-    const result = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        createUserContent([
-          prompt,
-          createPartFromUri(image.uri, image.mimeType)
-        ]),
-      ],
-    });
-
-    console.log(result.text);
-
-    res.json({ output: result.text });
+    const { message } = req.body;
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(message);
+    const response = await result.response;
+    const text = response.text();
+    res.json({ reply: text });
   } catch (error) {
-    console.error("Error generating content:", error);
-    res.status(500).json({ error: error.message });
-  } finally {
-    fs.unlinkSync(req.file.path);
+    console.error("Error:", error);
+    res.status(500).json({ error: "Terjadi kesalahan pada server." });
   }
 });
 
-app.post('/generate-from-document', upload.single('document'), async (req, res) => {
-  const { prompt = "Describe this uploaded document." } = req.body;
-
-  try {
-    const filePath = req.file.path;
-    const buffer = fs.readFileSync(filePath);
-    const base64Data = buffer.toString('base64');
-    const mimeType = req.file.mimetype;
-
-    const documentPart = {
-      inlineData: { data: base64Data, mimeType }
-    };
-
-    console.log({documentPart});
-
-    const result = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        createUserContent([
-          prompt,
-          documentPart
-        ]),
-      ],
-    });
-
-    console.log(result.text);
-
-    res.json({ output: result.text });
-  } catch (error) {
-    console.error("Error generating content:", error);
-    res.status(500).json({
-      error: e.message
-    });
-  } finally {
-    fs.unlinkSync(req.file.path);
-  }
-});
-
-app.post('/generate-from-audio', upload.single('audio'), async (req, res) => {
-  const { prompt = "Describe this uploaded audio." } = req.body;
-
-  try {
-    const audioBuffer = fs.readFileSync(req.file.path);
-    const base64Audio = audioBuffer.toString('base64');
-    const mimeType = req.file.mimetype;
-
-    const audioPart = {
-      inlineData: { data: base64Audio, mimeType }
-    };
-
-    console.log({audioPart});
-
-    const result = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        createUserContent([
-          prompt,
-          audioPart
-        ]),
-      ],
-    });
-
-    console.log(result.text);
-
-    res.json({ output: result.text });
-  } catch (error) {
-    console.error("Error generating content:", error);
-    res.status(500).json({ error: error.message });
-  } finally {
-    fs.unlinkSync(req.file.path);
-  }
-});
-
-// 
-
-const PORT = 3000;
-
-app.listen(PORT, () => {
-  console.log("I LOVE YOU " + PORT);
+// Jalankan server
+app.listen(port, () => {
+  console.log(`Aplikasi chatbot berjalan di http://localhost:${port}`);
 });
